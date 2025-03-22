@@ -44,9 +44,11 @@ import org.traccar.storage.query.Request;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -64,23 +66,44 @@ public class NotificationResource extends ExtendedObjectResource<Notification> {
         super(Notification.class, "description");
     }
 
-    @GET
-    @Path("types")
-    public Collection<Typed> get() {
-        List<Typed> types = new LinkedList<>();
-        Field[] fields = Event.class.getDeclaredFields();
-        for (Field field : fields) {
-            if (Modifier.isStatic(field.getModifiers()) && field.getName().startsWith("TYPE_")) {
-                try {
-                    types.add(new Typed(field.get(null).toString()));
-                } catch (IllegalArgumentException | IllegalAccessException error) {
-                    LOGGER.warn("Get event types error", error);
-                }
+@GET
+@Path("types")
+public Collection<Typed> getTypes(
+        @QueryParam("all") boolean all, 
+        @QueryParam("userId") long userId,
+        @QueryParam("groupId") long groupId, 
+        @QueryParam("deviceId") long deviceId) throws StorageException {
+    
+    List<Typed> types = new LinkedList<>();
+    Field[] fields = Event.class.getDeclaredFields();
+    for (Field field : fields) {
+        if (Modifier.isStatic(field.getModifiers()) && field.getName().startsWith("TYPE_")) {
+            try {
+                types.add(new Typed(field.get(null).toString()));
+            } catch (IllegalArgumentException | IllegalAccessException error) {
+                LOGGER.warn("Get event types error", error);
             }
         }
-        return types;
     }
 
+    User user = permissionsService.getUser(userId);
+    Map<String, Object> userAttributes = user.getAttributes();
+
+    if (userAttributes.containsKey("RemoveNotificationTypes")) {
+        String userTypes = (String) userAttributes.get("RemoveNotificationTypes");
+        if (userTypes != null && !userTypes.isEmpty()) {
+            Set<String> typesToRemove = Arrays.stream(userTypes.split(","))
+                .map(String::trim)
+                .collect(Collectors.toSet());
+            
+            types = types.stream()
+                .filter(typed -> !typesToRemove.contains(typed.type()))
+                .collect(Collectors.toList());
+        }
+    }
+
+    return types;
+}
     @GET
     @Path("notificators")
     public Collection<Typed> getNotificators(@QueryParam("announcement") boolean announcement) {
